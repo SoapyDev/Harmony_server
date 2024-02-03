@@ -26,7 +26,7 @@ pub(crate) async fn get_users(State(pool): State<Arc<MySqlPool>>, payload: Json<
     return if let Ok(value) = validate_token(conn, &payload.Token).await {
         let conn = acquire_connection(pool.clone()).await?;
         match value.Role.as_str() {
-            "Admin" | "Dev" => User::get_users(conn).await,
+            "Admin" | "Dev" => User::get_users(conn, value.Username).await,
             _ => Err((StatusCode::INTERNAL_SERVER_ERROR, "Invalid role".to_string())),
         }
     } else {
@@ -43,7 +43,7 @@ pub(crate) async fn login(State(pool) : State<Arc<MySqlPool>>, payload: Json<Use
     Err((StatusCode::UNAUTHORIZED, "Invalid credentials".to_string()))
 }
 
-pub(crate) async fn create_user(State(pool) : State<Arc<MySqlPool>>, payload: Json<UserToken>) -> Result<StatusCode, (StatusCode, String)>{
+pub(crate) async fn create_user(State(pool) : State<Arc<MySqlPool>>, payload: Json<UserToken>) -> Result<Vec<u8>, (StatusCode, String)>{
     let conn = acquire_connection(pool.clone()).await?;
 
     if validate_token(conn, &payload.Token).await.is_err(){
@@ -51,9 +51,11 @@ pub(crate) async fn create_user(State(pool) : State<Arc<MySqlPool>>, payload: Js
     }
 
     let conn = acquire_connection(pool.clone()).await?;
-    match payload.create_user(conn).await {
-        Ok(_) => Ok(StatusCode::CREATED),
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    match payload.create_user(conn).await{
+        Ok(val) => Ok(val),
+        Err(_) => {
+            Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to create user".to_string()))
+        }
     }
 }
 

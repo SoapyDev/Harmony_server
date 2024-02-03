@@ -6,7 +6,7 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Router;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use sqlx::{MySql, MySqlPool, Pool};
 use sqlx::pool::PoolConnection;
 
@@ -22,7 +22,7 @@ pub fn get_routes(pool : Arc<Pool<MySql>>) -> Router{
         .route("/getUsers", post(get_users)).with_state(pool.clone())
         .route("/createUser", post(create_user)).with_state(pool.clone())
         .route("/updateUser", post(update_user)).with_state(pool.clone())
-        .route("/deleteUser", post(delete_user)).with_state(pool.clone())
+        .route("/deleteUser", delete(delete_user)).with_state(pool.clone())
         .route("/getBeneficiary", post(beneficiary)).with_state(pool.clone())
         .route("/getBeneficiaries", post(beneficiaries)).with_state(pool.clone())
         .route("/searchBeneficiaries", post(search_beneficiaries)).with_state(pool.clone())

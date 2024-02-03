@@ -25,8 +25,9 @@
             verify(other, &self.Password).unwrap_or(false) || other == self.Password
         }
 
-        pub(crate) async fn get_users(mut conn: PoolConnection<MySql>) -> Result<Vec<u8>, (StatusCode, String)>{
-            let users: Result<Vec<User>, Error> = sqlx::query_as("SELECT Id, Username, '' as Password, Role FROM User")
+        pub(crate) async fn get_users(mut conn: PoolConnection<MySql>, username: String) -> Result<Vec<u8>, (StatusCode, String)>{
+            let users: Result<Vec<User>, Error> = sqlx::query_as("SELECT Id, Username, '' as Password, Role FROM User WHERE Role NOT LIKE 'Dev' AND Username NOT LIKE 'admin' AND Username NOT LIKE ?")
+                .bind(username)
                 .fetch_all(conn.as_mut())
                 .await;
             match users {
@@ -50,26 +51,56 @@
     }
 
     impl UserToken{
-        pub(crate) async fn create_user(&self, mut conn: PoolConnection<MySql>) -> Result<(), anyhow::Error>{
-            sqlx::query("INSERT INTO User (Username, Password, Role) VALUES (?, ?, ?)")
+        pub(crate) async fn create_user(&self, mut conn: PoolConnection<MySql>) -> Result<Vec<u8>, anyhow::Error>{
+            let result = sqlx::query("INSERT INTO User (Username, Password, Role) VALUES (?, ?, ?)")
                 .bind(&self.User.Username)
                 .bind(bcrypt::hash(&self.User.Password, DEFAULT_COST).unwrap())
                 .bind(&self.User.Role)
                 .execute(conn.as_mut())
                 .await
-                .context("Failed to insert user")?;
-            Ok(())
+                .context("Failed to insert user");
+
+            if result.is_err() {
+                return Err(anyhow::Error::msg("Failed to insert user"));
+            }
+
+            let user = sqlx::query_as::<_, User>("SELECT * FROM User WHERE Username = ?")
+                .bind(&self.User.Username)
+                .fetch_one(conn.as_mut())
+                .await
+                .context("Failed to get user")?;
+
+
+            let encoded = encode(user);
+
+            match encoded {
+                Ok(val) => Ok(val),
+                Err(_) => {
+                    Err(anyhow::Error::msg("Failed to encode user"))
+                },
+            }
+
         }
 
         pub(crate) async fn update_user(&self, mut conn: PoolConnection<MySql>) -> Result<(), anyhow::Error>{
-            let _ = sqlx::query("UPDATE User Set Username = ?, Password = ?, Role = ? WHERE Id = ?")
-                .bind(&self.User.Username)
-                .bind(bcrypt::hash(&self.User.Password, DEFAULT_COST).unwrap())
-                .bind(&self.User.Role)
-                .bind(self.User.Id)
-                .execute(conn.as_mut())
-                .await
-                .context("Failed to update user")?;
+            if !self.User.Password.is_empty() {
+                let _ = sqlx::query("UPDATE User Set Username = ?, Password = ?, Role = ? WHERE Id = ?")
+                    .bind(&self.User.Username)
+                    .bind(bcrypt::hash(&self.User.Password, DEFAULT_COST).unwrap())
+                    .bind(&self.User.Role)
+                    .bind(self.User.Id)
+                    .execute(conn.as_mut())
+                    .await
+                    .context("Failed to update user")?;
+            } else {
+                let _ = sqlx::query("UPDATE User Set Username = ?, Role = ? WHERE Id = ?")
+                    .bind(&self.User.Username)
+                    .bind(&self.User.Role)
+                    .bind(self.User.Id)
+                    .execute(conn.as_mut())
+                    .await
+                    .context("Failed to update user")?;
+            }
 
             Ok(())
         }

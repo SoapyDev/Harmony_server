@@ -172,7 +172,8 @@ impl Display for BeneficiaryQueries{
     impl Beneficiary{
         pub(crate) async fn create_beneficiary(mut conn : PoolConnection<MySql>, user: UserRole) -> Result<Vec<u8>, (StatusCode, String)> {
             let _ = match user.Role.as_str() {
-                "TS" => sqlx::query(&BeneficiaryQueries::Create.to_string())
+                "TS" =>
+                    sqlx::query(&BeneficiaryQueries::Create.to_string())
                     .execute(conn.as_mut())
                     .await,
                 _ => return Err((StatusCode::INTERNAL_SERVER_ERROR, "Invalid role".to_string()))
@@ -183,7 +184,7 @@ impl Display for BeneficiaryQueries{
                 .fetch_one(conn.as_mut())
                 .await{
                 let id = id.get::<u32, usize>(0);
-                let bene: Result<Beneficiary, Error> = sqlx::query_as(&format!("{} WHERE Id = ?", BeneficiaryQueries::GetTs))
+                let bene: Result<Beneficiary, Error> = sqlx::query_as(&format!("{}", BeneficiaryQueries::GetTsDetails))
                     .bind(id)
                     .fetch_one(conn.as_mut())
                     .await;
@@ -344,7 +345,7 @@ pub(crate) struct TokenAllergy{
 }
     impl TokenAllergy{
         pub(crate) async fn insert_allergy(&self,mut conn: PoolConnection<MySql>) -> Result<(), Error>{
-            let _ = sqlx::query("INSERT INTO BeneficiaryAllergies (BeneficiaryId, Allergy) VALUES (?, ?)")
+            let _ = sqlx::query("INSERT INTO Harmony.BeneficiaryAllergies (BeneficiaryId, Allergy) VALUES (?, ?)")
                 .bind(self.Allergy.BeneficiaryId)
                 .bind(self.Allergy.Allergy.clone())
                 .execute(conn.as_mut())
@@ -353,7 +354,7 @@ pub(crate) struct TokenAllergy{
         }
 
         pub(crate) async fn delete_allergy(&self, mut conn: PoolConnection<MySql>) -> Result<(), Error>{
-            let _ = sqlx::query("DELETE FROM BeneficiaryAllergies WHERE BeneficiaryId = ? AND Allergy = ?")
+            let _ = sqlx::query("DELETE FROM Harmony.BeneficiaryAllergies WHERE BeneficiaryId = ? AND Allergy LIKE ? ESCAPE '#'")
                 .bind(self.Allergy.BeneficiaryId)
                 .bind(self.Allergy.Allergy.clone())
                 .execute(conn.as_mut())
