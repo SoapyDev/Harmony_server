@@ -26,7 +26,7 @@
         }
 
         pub(crate) async fn get_users(mut conn: PoolConnection<MySql>, username: String) -> Result<Vec<u8>, (StatusCode, String)>{
-            let users: Result<Vec<User>, Error> = sqlx::query_as("SELECT Id, Username, '' as Password, Role FROM User WHERE Role NOT LIKE 'Dev' AND Username NOT LIKE 'admin' AND Username NOT LIKE ?")
+            let users: Result<Vec<User>, Error> = sqlx::query_as("SELECT Id, Username, '' as Password, Role FROM User WHERE Role NOT LIKE 'Dev' AND Username != 'admin' AND Username != ?")
                 .bind(username)
                 .fetch_all(conn.as_mut())
                 .await;
@@ -167,51 +167,72 @@
 
     #[derive(sqlx::FromRow, Encode, Serialize, Deserialize)]
     pub(crate) struct Connection{
-        pub(crate) Session: String,
+        pub(crate) Token: String,
         pub(crate) Role: String,
     }
 
     impl Connection{
         pub(crate) async fn get_or_create_connection(pool: Arc<MySqlPool>, user: User) -> Result<Vec<u8>, (StatusCode, String)>{
+            println!("->> {:>12} - Login - User : {}", "Handler", user.Username);
+
             let mut connection = Connection{
-                Session: Uuid::new_v4().to_string(),
+                Token: format!("{}-{}", user.Username, Uuid::new_v4()),
                 Role: user.Role.to_string(),
             };
             let conn = acquire_connection(pool.clone()).await?;
-            let session = connection.get_session(conn, user.Id).await;
+            let session = connection.get_token(conn, user.Id).await;
 
             if session.is_none() {
                 let conn = acquire_connection(pool.clone()).await?;
-                connection.create_session(conn, user.Id, connection.Session.clone()).await?;
+                connection.create_session(conn, user.Id, connection.Token.clone()).await.map_err(|e| {
+                    println!("->> {:>12} - Login - Error : {}", "Handler", e.1);
+                    e
+                })?;
             }
+            println!("->> {:>12} - Login - Token : {}", "Handler", connection.Token);
             encode(connection)
         }
 
         async fn create_session(&mut self, mut conn : PoolConnection<MySql>, id: i32, session: String) -> Result<(), (StatusCode, String)> {
-            let res = sqlx::query("INSERT INTO UserSession (UserId, Session, ConnectionDate, Expires) VALUES (?, ?, NOW(), (NOW() + INTERVAL 1 DAY))")
+            println!("->> {:>12} - Create Session - User : {}", "Handler", id);
+            let res = sqlx::query("INSERT INTO UserSession (UserId, Token, ConnectionDate, Expires) VALUES (?, ?, NOW(), NOW() + INTERVAL 1 DAY)")
                 .bind(id)
                 .bind(session)
                 .execute(conn.as_mut())
                 .await;
 
             match res {
-                Ok(_) => Ok(()),
-                Err(_) => Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to create session".to_string())),
+                Ok(_) => {
+                    println!("->> {:>12} - Create Session - Success", "Handler");
+                    Ok(())
+                },
+                Err(_) => {
+                    println!("->> {:>12} - Create Session - Failed", "Handler");
+                    Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to create session".to_string()))
+                },
             }
         }
-        async fn get_session(&mut self, mut conn: PoolConnection<MySql>, id: i32) -> Option<Token>{
-            let session: Result<Token, anyhow::Error> = sqlx::query_as("SELECT Session FROM UserSession WHERE UserId = ? AND Expires > NOW()")
+        async fn get_token(&mut self, mut conn: PoolConnection<MySql>, id: i32) -> Option<Token>{
+            println!("->> {:>12} - Get Token - User : {}", "Handler", id);
+            let session: Result<Option<Token>, Error>= sqlx::query_as("SELECT Token FROM UserSession WHERE UserId = ? AND Expires > NOW()")
                 .bind(id)
-                .fetch_one(conn.as_mut())
-                .await
-                .context("Failed to get session");
+                .fetch_optional(conn.as_mut())
+                .await;
 
             match session {
-                Ok(session) => {
-                    self.Session = session.Token.clone();
+                Ok(Some(session)) => {
+                    println!("->> {:>12} - Get Token - Success", "Handler");
+                    self.Token = session.Token.clone();
                     Some(session)
                 },
-                Err(_) => None,
+                Ok(None) => {
+                    println!("->> {:>12} - Get Token - NO TOKEN", "Handler");
+                    None
+                },
+                Err(e) => {
+                    println!("->> {:>12} - Get Token - FAILED : {:?}", "Handler",e);
+                    None
+                },
             }
         }
     }

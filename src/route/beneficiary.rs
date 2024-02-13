@@ -5,7 +5,7 @@ use axum::Json;
 use sqlx::MySqlPool;
 
 use crate::route::acquire_connection;
-use crate::schema::beneficiary::{TokenAllergy, TokenPresence, Beneficiary, BeneficiaryAction};
+use crate::schema::beneficiary::{Beneficiary, BeneficiaryAction};
 use crate::schema::user::{Token, TokenBene, TokenBeneId, TokenSearch};
 use crate::schema::validate_token;
 
@@ -36,7 +36,7 @@ pub(crate) async fn beneficiary(State(pool) : State<Arc<MySqlPool>>, payload: Js
         let conn = acquire_connection(pool.clone()).await?;
         Beneficiary::get_beneficiary(conn, user, payload.Id).await
     }else{
-        Err((StatusCode::INTERNAL_SERVER_ERROR, "Invalid token".to_string()))
+        Err((StatusCode::UNAUTHORIZED, "Invalid token".to_string()))
     }
 }
 
@@ -44,7 +44,7 @@ pub(crate) async fn create_beneficiary(State(pool) : State<Arc<MySqlPool>>, payl
     let conn = acquire_connection(pool.clone()).await?;
     match validate_token(conn, &payload.Token).await {
         Ok(user) => Beneficiary::create_beneficiary(acquire_connection(pool.clone()).await?, user).await,
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        Err(_) => Err((StatusCode::UNAUTHORIZED,"Invalid token".to_string()))
     }
 }
 
@@ -52,79 +52,11 @@ pub(crate) async fn update_beneficiary(State(pool) : State<Arc<MySqlPool>>, payl
     let conn = acquire_connection(pool.clone()).await?;
 
     let res = match validate_token(conn, &payload.Token).await {
-        Ok(user) => Beneficiary::update_beneficiary(acquire_connection(pool.clone()).await?, user, &payload.Beneficiary).await,
-        Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+        Ok(user) => Beneficiary::update_beneficiary(acquire_connection(pool.clone()).await?, user, payload.Beneficiary.clone()).await,
+        Err(_) => return Err((StatusCode::FORBIDDEN, "Invalid token".to_string())),
     };
     match res {
         Ok(_) => Ok(StatusCode::OK),
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
-    }
-}
-
-pub(crate) async fn insert_allergy(State(pool) : State<Arc<MySqlPool>>, payload: Json<TokenAllergy>) -> Result<StatusCode, (StatusCode, String)>{
-    let conn = acquire_connection(pool.clone()).await?;
-    match validate_token(conn, &payload.Token).await {
-        Ok(user) => match user.Role.as_str(){
-            "TS" | "Dev" | "Admin" | "User" => {
-                let conn = acquire_connection(pool.clone()).await?;
-                match payload.insert_allergy(conn).await {
-                    Ok(_) => Ok(StatusCode::OK),
-                    Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
-                }
-            },
-            _ => Err((StatusCode::FORBIDDEN, "Invalid role".to_string()))
-        },
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
-    }
-}
-
-pub(crate) async fn delete_allergy(State(pool) : State<Arc<MySqlPool>>, payload: Json<TokenAllergy>) -> Result<StatusCode, (StatusCode, String)>{
-    let conn = acquire_connection(pool.clone()).await?;
-    match validate_token(conn, &payload.Token).await {
-        Ok(user) => match user.Role.as_str(){
-            "TS" | "Dev" | "Admin" | "User" => {
-                let conn = acquire_connection(pool.clone()).await?;
-                match payload.delete_allergy(conn).await {
-                    Ok(_) => Ok(StatusCode::OK),
-                    Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
-                }
-            },
-            _ => Err((StatusCode::FORBIDDEN, "Invalid role".to_string()))
-        },
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
-    }
-}
-pub(crate) async fn insert_presence(State(pool) : State<Arc<MySqlPool>>, payload: Json<TokenPresence>) -> Result<StatusCode, (StatusCode, String)>{
-    let conn = acquire_connection(pool.clone()).await?;
-    match validate_token(conn, &payload.Token).await {
-        Ok(user) => match user.Role.as_str(){
-            "TS" | "Dev" | "Admin" | "User" => {
-                let conn = acquire_connection(pool.clone()).await?;
-                match payload.insert_presence(conn).await {
-                    Ok(_) => Ok(StatusCode::OK),
-                    Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
-                }
-            },
-            _ => Err((StatusCode::FORBIDDEN, "Invalid role".to_string()))
-        },
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
-    }
-}
-
-
-pub(crate) async fn delete_presence(State(pool) : State<Arc<MySqlPool>>, payload: Json<TokenPresence>) -> Result<StatusCode, (StatusCode, String)>{
-    let conn = acquire_connection(pool.clone()).await?;
-    match validate_token(conn, &payload.Token).await {
-        Ok(user) => match user.Role.as_str(){
-            "TS" | "Dev" | "Admin" | "User" => {
-                let conn = acquire_connection(pool.clone()).await?;
-                match payload.delete_presence(conn).await {
-                    Ok(_) => Ok(StatusCode::OK),
-                    Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
-                }
-            },
-            _ => Err((StatusCode::FORBIDDEN, "Invalid role".to_string()))
-        },
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        Err(_) => Err((StatusCode::UNAUTHORIZED, "Invalid token".to_string())),
     }
 }

@@ -1,3 +1,4 @@
+use axum::http::StatusCode;
 use bincode::{Encode};
     use serde::{Deserialize, Serialize};
     use sqlx::MySql;
@@ -7,6 +8,7 @@ use bincode::{Encode};
     #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug)]
     pub(crate) struct Stats {
         pub(crate) Presences: Vec<Presence>,
+        pub(crate) Amounts: Vec<Amounts>,
         pub(crate) Ages: Vec<Age>,
         pub(crate) Cities: Vec<City>,
         pub(crate) Employments: Vec<Employment>,
@@ -20,50 +22,53 @@ use bincode::{Encode};
     }
 
     impl Stats{
-        pub(crate) async fn get_stats(mut conn: PoolConnection<MySql>) -> Result<Vec<u8>, anyhow::Error> {
+        pub(crate) async fn get_stats(mut conn: PoolConnection<MySql>) -> Result<Vec<u8>, (StatusCode, String)> {
             let stats = Self {
                 Presences: sqlx::query_as("SELECT DATE_FORMAT(Date, '%Y-%m-%d') AS Date, Total, Active, Visits FROM Presence ORDER BY Date ASC")
                     .fetch_all(conn.as_mut())
-                    .await?,
+                    .await.unwrap_or_default(),
+                Amounts: sqlx::query_as("SELECT DATE_FORMAT(Date, '%Y-%m-%d') AS Date, TotalWeekly, TotalMonthly FROM Amounts ORDER BY Date ASC")
+                    .fetch_all(conn.as_mut())
+                    .await.unwrap_or_default(),
                 Ages: sqlx::query_as("SELECT DATE_FORMAT(Date, '%Y-%m-%d') AS Date, Age_0_19, Age_20_29, Age_30_39, Age_40_49, Age_50_59, Age_60_69, Age_70_Plus FROM Age ORDER BY Date ASC")
                     .fetch_all(conn.as_mut())
-                    .await?,
+                    .await.unwrap_or_default(),
                 Cities: sqlx::query_as("SELECT DATE_FORMAT(Date, '%Y-%m-%d') AS Date, Carignan, Chambly, Marieville, Richelieu, StMathias, Other FROM City ORDER BY Date ASC")
                     .fetch_all(conn.as_mut())
-                    .await?,
+                    .await.unwrap_or_default(),
                 Employments: sqlx::query_as("SELECT DATE_FORMAT(Date, '%Y-%m-%d') AS Date, Unemployed, Employed FROM Employment ORDER BY Date ASC")
                     .fetch_all(conn.as_mut())
-                    .await?,
+                    .await.unwrap_or_default(),
                 FamilySituations: sqlx::query_as("SELECT DATE_FORMAT(Date, '%Y-%m-%d') AS Date, Single, Couple, CoupleKids, Recomposed, SingleParent, Other FROM FamilySituation ORDER BY Date ASC")
                     .fetch_all(conn.as_mut())
-                    .await?,
+                    .await.unwrap_or_default(),
                 Incomes: sqlx::query_as("SELECT DATE_FORMAT(Date, '%Y-%m-%d') AS Date, NoIncome, Income_1_14999, Income_15000_29999, Income_30000_More FROM Income ORDER BY Date ASC")
                     .fetch_all(conn.as_mut())
-                    .await?,
+                    .await.unwrap_or_default(),
                 Kids: sqlx::query_as("SELECT DATE_FORMAT(Date, '%Y-%m-%d') AS Date, NoKids, OneKid, TwoKids, ThreeToFourKids, FivePlusKids FROM Kid ORDER BY Date ASC")
                     .fetch_all(conn.as_mut())
-                    .await?,
+                    .await.unwrap_or_default(),
                 Languages: sqlx::query_as("SELECT DATE_FORMAT(Date, '%Y-%m-%d') AS Date, French, English, Spanish, Arabic, Mandarin, Other FROM Language ORDER BY Date ASC")
                     .fetch_all(conn.as_mut())
-                    .await?,
+                    .await.unwrap_or_default(),
                 Origins: sqlx::query_as("SELECT DATE_FORMAT(Date, '%Y-%m-%d') AS Date, NorthAmerican, SouthAmerican, CentralAmerican, Asian, African, European, Other FROM Origin ORDER BY Date ASC")
                     .fetch_all(conn.as_mut())
-                    .await?,
+                    .await.unwrap_or_default(),
                 Sexes: sqlx::query_as("SELECT  DATE_FORMAT(Date, '%Y-%m-%d') AS Date, Male, Female, Other FROM Sexe ORDER BY Date ASC")
                     .fetch_all(conn.as_mut())
-                    .await?,
+                    .await.unwrap_or_default(),
                 Studies: sqlx::query_as("SELECT  DATE_FORMAT(Date, '%Y-%m-%d') AS Date, NoStudy, PrimarySchool, HighSchool, College, University, Other FROM Study ORDER BY Date ASC")
                     .fetch_all(conn.as_mut())
-                    .await?
+                    .await.unwrap_or_default(),
             };
             match encode(stats) {
                 Ok(b) => Ok(b),
-                Err(( _ ,message)) => Err(anyhow::Error::msg(message))
+                Err(_) => Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to get stats".to_string()))
             }
         }
     }
 
-    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug)]
+    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug, Default)]
     pub(crate) struct Presence {
         pub(crate) Date: String,
         pub(crate) Total: u32,
@@ -71,7 +76,13 @@ use bincode::{Encode};
         pub(crate) Visits: u32,
     }
 
-    #[derive(sqlx::FromRow, Encode,Serialize, Deserialize, Debug)]
+#[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug, Default)]
+pub(crate) struct Amounts {
+    pub(crate) Date: String,
+    pub(crate) TotalWeekly: u32,
+    pub(crate) TotalMonthly: u32,
+}
+    #[derive(sqlx::FromRow, Encode,Serialize, Deserialize, Debug, Default)]
     pub(crate) struct Age {
         pub(crate) Date: String,
         pub(crate) Age_0_19: u32,
@@ -83,7 +94,7 @@ use bincode::{Encode};
         pub(crate) Age_70_Plus: u32,
     }
 
-    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug)]
+    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug, Default)]
     pub(crate) struct City {
         pub(crate) Date: String,
         pub(crate) Carignan: u32,
@@ -94,14 +105,14 @@ use bincode::{Encode};
         pub(crate) Other: u32,
     }
 
-    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug)]
+    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug, Default)]
     pub(crate) struct Employment {
         pub(crate) Date: String,
         pub(crate) Unemployed: u32,
         pub(crate) Employed: u32,
     }
 
-    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug)]
+    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug, Default)]
     pub(crate) struct FamilySituation {
         pub(crate) Date: String,
         pub(crate) Single: u32,
@@ -112,7 +123,7 @@ use bincode::{Encode};
         pub(crate) Other: u32,
     }
 
-    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug)]
+    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug, Default)]
     pub(crate) struct Income {
         pub(crate) Date: String,
         pub(crate) NoIncome: u32,
@@ -121,7 +132,7 @@ use bincode::{Encode};
         pub(crate) Income_30000_More: u32,
     }
 
-    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug)]
+    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug, Default)]
     pub(crate) struct Kid {
         pub(crate) Date: String,
         pub(crate) NoKids: u32,
@@ -131,7 +142,7 @@ use bincode::{Encode};
         pub(crate) FivePlusKids: u32,
     }
 
-    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug)]
+    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug, Default)]
     pub(crate) struct Language {
         pub(crate) Date: String,
         pub(crate) French: u32,
@@ -142,7 +153,7 @@ use bincode::{Encode};
         pub(crate) Other: u32,
     }
 
-    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug)]
+    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug, Default)]
     pub(crate) struct Origin {
         pub(crate) Date: String,
         pub(crate) NorthAmerican: u32,
@@ -154,7 +165,7 @@ use bincode::{Encode};
         pub(crate) Other: u32,
     }
 
-    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug)]
+    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug, Default)]
     pub(crate) struct Study {
         pub(crate) Date: String,
         pub(crate) NoStudy: u32,
@@ -165,7 +176,7 @@ use bincode::{Encode};
         pub(crate) Other: u32,
     }
 
-    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug)]
+    #[derive(sqlx::FromRow, Encode, Serialize, Deserialize, Debug, Default)]
     pub(crate) struct Sexe {
         pub(crate) Date: String,
         pub(crate) Male: u32,
